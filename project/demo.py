@@ -11,4 +11,4 @@
 
 import points_mesh
 
-points_mesh.mesh_predict("images/autops/*.png", "output/autops")
+points_mesh.mesh_predict("points/*.ply", "output")

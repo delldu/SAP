@@ -1,4 +1,4 @@
-"""points to mesh Package."""  # coding=utf-8
+"""point cloud to mesh Package."""  # coding=utf-8
 #
 # /************************************************************************************
 # ***
@@ -16,8 +16,7 @@ from tqdm import tqdm
 import torch
 
 import todos
-from . import guided
-
+from . import mesh
 import pdb
 
 
@@ -26,7 +25,7 @@ def get_tvm_model():
     TVM model base on torch.jit.trace, that's why we construct it from scratch
     """
 
-    model = guided.DeepGuidedFilterAdvanced()
+    model = mesh.MeshSDF()
     device = todos.model.get_device()
     model = model.to(device)
     model.eval()
@@ -37,19 +36,16 @@ def get_tvm_model():
 
 def get_torch_model():
     """Create model."""
-    base = guided.DeepGuidedFilterAdvanced()
-    base.load_weights(model_path="models/points_mesh.pth")
-    model = todos.model.ResizePadModel(base)
-    # model = todos.model.GridTileModel(base)
+    model = mesh.MeshSDF()
     device = todos.model.get_device()
     model = model.to(device)
     model.eval()
 
     print(f"Running model on {device} ...")
-    model = torch.jit.script(model)
-    todos.data.mkdir("output")
-    if not os.path.exists("output/points_mesh.torch"):
-        model.save("output/points_mesh.torch")
+    # model = torch.jit.script(model)
+    # todos.data.mkdir("output")
+    # if not os.path.exists("output/points_mesh.torch"):
+    #     model.save("output/points_mesh.torch")
 
     return model, device
 
@@ -61,21 +57,25 @@ def mesh_predict(input_files, output_dir):
     # load model
     model, device = get_torch_model()
 
+    print(model.enc)
+
+    return
+
+
     # load files
-    image_filenames = todos.data.load_files(input_files)
+    pc_filenames = todos.data.load_files(input_files)
 
     # start predict
-    progress_bar = tqdm(total=len(image_filenames))
-    for filename in image_filenames:
+    progress_bar = tqdm(total=len(pc_filenames))
+    for filename in pc_filenames:
         progress_bar.update(1)
 
-        # orig input
-        input_tensor = todos.data.load_tensor(filename)
+        points, normals = todos.data.load_3dply(filename)
+        # ignore normals
 
-        # pytorch recommand clone.detach instead of torch.Tensor(input_tensor)
-        orig_tensor = input_tensor.clone().detach()
-        predict_tensor = todos.model.forward(model, device, input_tensor)
+        # chi = todos.model.forward(model, device, points)
         output_file = f"{output_dir}/{os.path.basename(filename)}"
-
-        todos.data.save_tensor([orig_tensor, predict_tensor], output_file)
+        output_file = output_file.split('.')[0] + ".obj" # replace "*.ply to *.obj"
+        print(output_file)
+        # todos.data.export_3dmesh(chi, output_file)
     todos.model.reset_device()

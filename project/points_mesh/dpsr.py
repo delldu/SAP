@@ -14,7 +14,8 @@ import torch
 import torch.nn as nn
 import torch.fft
 from typing import Tuple, Optional
-from io3d import load_ply, export_mesh
+
+import todos
 
 import pdb
 
@@ -103,13 +104,15 @@ def point_rasterization(
     # points.size() -- [1, 85127, 3]
     # features.size() -- [1, 85127, 3]
 
+    rdevice = points.device # running device
+
     batchsize = points.shape[0] # 1
     samplesize = points.shape[1] # 85127
     dim = points.shape[2] # 3
     featuresize = features.shape[2] # 3
 
     # x0, y0, z0
-    voxelcount = torch.tensor(grid) # tensor([256, 256, 256])
+    voxelcount = torch.tensor(grid).to(rdevice) # tensor([256, 256, 256])
     # s0, s1, s2
     voxelsize = 1 / voxelcount # tensor([0.0039, 0.0039, 0.0039])
     eps = 1e-5
@@ -149,29 +152,29 @@ def point_rasterization(
     # e.g. if dim=3 : 000, 001, 010, ..., 110, 111
     combinations = torch.stack(
         torch.meshgrid(*([torch.tensor([0, 1])] * dim), indexing="ij"), dim=-1
-    ).reshape(2**dim, dim)
-    # (Pdb) combinations --
-    # tensor([[0, 0, 0],
-    #         [0, 0, 1],
-    #         [0, 1, 0],
-    #         [0, 1, 1],
-    #         [1, 0, 0],
-    #         [1, 0, 1],
-    #         [1, 1, 0],
-    #         [1, 1, 1]])
+    ).reshape(2**dim, dim).to(rdevice)
+    # combinations = torch.tensor([
+    #     [0, 0, 0],
+    #     [0, 0, 1],
+    #     [0, 1, 0],
+    #     [0, 1, 1],
+    #     [1, 0, 0],
+    #     [1, 0, 1],
+    #     [1, 1, 0],
+    #     [1, 1, 1]])
 
     # [0,1,..,dim-1] * (2**dim)
     # e.g if dim=3 : [[1,2,3],[1,2,3],...]
-    selection = torch.arange(dim).repeat(2**dim, 1)
-    # (Pdb) selection -- 
-    # tensor([[0, 1, 2],
-    #         [0, 1, 2],
-    #         [0, 1, 2],
-    #         [0, 1, 2],
-    #         [0, 1, 2],
-    #         [0, 1, 2],
-    #         [0, 1, 2],
-    #         [0, 1, 2]])
+    selection = torch.arange(dim).repeat(2**dim, 1).to(rdevice)
+    # selection = torch.tensor([
+    #     [0, 1, 2],
+    #     [0, 1, 2],
+    #     [0, 1, 2],
+    #     [0, 1, 2],
+    #     [0, 1, 2],
+    #     [0, 1, 2],
+    #     [0, 1, 2],
+    #     [0, 1, 2]])
 
     # creates all possible indexing combinations
     # e.g. (low, low, low), (low, low, up), ..., (up, up, up)
@@ -226,7 +229,7 @@ def point_rasterization(
 
     # construct final index
     # [1, 85127, 8, 3, 1], [1, 85127, 8, 3, 1], [1, 85127, 8, 3, 3] ==> [1, 85127, 8, 3, 5]
-    index = torch.cat([batch_index, feature_index, sample_index], dim=-1)
+    index = torch.cat([batch_index.to(rdevice), feature_index.to(rdevice), sample_index], dim=-1)
 
     # flatten all dimensions
     index = index.reshape(-1, dim + 2) # [2043048, 5]
@@ -234,16 +237,17 @@ def point_rasterization(
 
     # construct output grid
     output_size = torch.Size((batchsize, featuresize, *grid)) # torch.Size([1, 3, 256, 256, 256])
-    output_grid = torch.zeros(output_size, dtype=field_values.dtype).view(-1) # [50331648]
+    output_grid = torch.zeros(output_size, dtype=field_values.dtype).view(-1).to(rdevice) # [50331648]
 
     # flatten the index
     # [1] + list(output_size[:0:-1]) -- [1, 256, 256, 256, 3]
-    index_folds = torch.tensor([1] + list(output_size[:0:-1])).cumprod(0).flip(0)
+    index_folds = torch.tensor([1] + list(output_size[:0:-1])).cumprod(0).flip(0).to(rdevice)
     # index_folds -- tensor([50331648, 16777216,    65536,      256,        1])
     index_flat = torch.sum(index * index_folds, dim=-1)
 
     # write field values to grid at index position
     # index_flat.size() -- [2043048]
+
     output_grid.scatter_add_(0, index_flat, field_values)
     output_grid = output_grid.view(*output_size)
 
@@ -278,7 +282,7 @@ def grid_interpolation(
     batchsize = query_points.shape[0] # 1
     samplesize = query_points.shape[1] # 85127
     dim = query_points.shape[2] # 3
-    voxelcount = torch.tensor(field_values.shape[1:-1]) # tensor([256, 256, 256])
+    voxelcount = torch.tensor(field_values.shape[1:-1]).to(field_values.device) # tensor([256, 256, 256])
     # s0, s1, s2
     voxelsize = 1 / voxelcount
     eps = 1e-5
@@ -312,7 +316,7 @@ def grid_interpolation(
     # e.g. if dim=3 : 000, 001, 010, ..., 110, 111
     combinations = torch.stack(
         torch.meshgrid(*([torch.tensor([0, 1])] * dim), indexing="ij"), dim=-1
-    ).reshape(2**dim, dim)
+    ).reshape(2**dim, dim).to(field_values.device)
     # (Pdb) combinations
     # tensor([[0, 0, 0],
     #         [0, 0, 1],
@@ -325,7 +329,7 @@ def grid_interpolation(
 
     # [0,1,..,dim-1] * (2**dim)
     # e.g if dim=3 : [[1,2,3],[1,2,3],...]
-    selection = torch.arange(dim).repeat(2**dim, 1)
+    selection = torch.arange(dim).repeat(2**dim, 1).to(field_values.device)
     # (Pdb) selection
     # tensor([[0, 1, 2],
     #         [0, 1, 2],
@@ -391,12 +395,12 @@ def grid_interpolation(
 
 
 class DPSR(nn.Module):
-    def __init__(self, res=(256, 256, 256), sig=2):
+    def __init__(self, res=(256, 256, 256), sigma=2):
         super(DPSR, self).__init__()
         self.grid = res
         self.dim = len(res) # 3
         self.eps = 1e-6
-        self.sigma = sig
+        self.sigma = sigma
 
         # compute vector u
         u = get_fft_frequencies(self.grid).unsqueeze(0)  # [batch, *grid, dim]
@@ -462,15 +466,21 @@ class DPSR(nn.Module):
 
         return chi # chi.size() -- [1, 256, 256, 256]
 
+    def __repr__(self):
+        return f'DPSR: grid = {self.grid}, sigma = {self.sigma}'
+
 
 if __name__ == "__main__":
-    pc_file = "/tmp/dc.ply"
-    points, normals = load_ply(pc_file)
+    device = torch.device("cuda:0")
+    pc_file = "../points/002.ply"
+    points, normals = todos.data.load_3dply(pc_file, device=device)
 
-    model = DPSR()
+    model = DPSR().to(device)
     model.eval()
+
     with torch.no_grad():
         chi = model(points, normals)
-    export_mesh(chi, "/tmp/dc.obj")
+
+    todos.data.export_3dmesh(chi, "/tmp/dc.obj")
 
     os.system("meshlab /tmp/dc.obj")

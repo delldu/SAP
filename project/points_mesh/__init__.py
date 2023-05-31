@@ -57,11 +57,6 @@ def mesh_predict(input_files, output_dir):
     # load model
     model, device = get_torch_model()
 
-    print(model.enc)
-
-    return
-
-
     # load files
     pc_filenames = todos.data.load_files(input_files)
 
@@ -73,9 +68,10 @@ def mesh_predict(input_files, output_dir):
         points, normals = todos.data.load_3dply(filename)
         # ignore normals
 
-        # chi = todos.model.forward(model, device, points)
+        chi = todos.model.forward(model, device, points)
         output_file = f"{output_dir}/{os.path.basename(filename)}"
         output_file = output_file.split('.')[0] + ".obj" # replace "*.ply to *.obj"
         print(output_file)
-        # todos.data.export_3dmesh(chi, output_file)
+        todos.data.export_3dmesh(chi, output_file)
+
     todos.model.reset_device()

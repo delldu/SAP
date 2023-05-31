@@ -28,28 +28,18 @@ def normalize_3d_coordinate(p):
         p[p < 0] = 0.0
     return p
 
-def coordinate2index(x, reso, coord_type='2d'):
-    ''' Normalize coordinate to [0, 1] for unit cube experiments.
-        Corresponds to our 3D model
-
-    Args:
-        x (tensor): coordinate
-        reso (int): defined resolution
-        coord_type (str): coordinate type
-    '''
+# xxxx8888
+def coordinate3d_index(x, reso):
     x = (x * reso).long()
-    if coord_type == '2d': # plane
-        index = x[:, :, 0] + reso * x[:, :, 1]
-    elif coord_type == '3d': # grid
-        index = x[:, :, 0] + reso * (x[:, :, 1] + reso * x[:, :, 2])
+    index = x[:, :, 0] + reso * (x[:, :, 1] + reso * x[:, :, 2])
     index = index[:, None, :]
     return index
 
-
+# xxxx8888
 class map2local(object):
     def __init__(self, s):
         super().__init__()
-        self.s = s
+        self.s = s # 'grid_resolution' -- 32
 
     def __call__(self, p):
         p = (p % self.s) / self.s
@@ -77,11 +67,13 @@ class ResnetBlockFC(nn.Module):
         self.size_in = size_in
         self.size_h = size_h
         self.size_out = size_out
+
         # Submodules
         self.fc_0 = nn.Linear(size_in, size_h)
         self.fc_1 = nn.Linear(size_h, size_out)
         self.actvn = nn.ReLU()
 
+        # xxxx8888
         if size_in == size_out:
             self.shortcut = None
         else:
@@ -115,12 +107,11 @@ class LocalPoolPointnet(nn.Module):
         map2local (function): map global coordintes to local ones
     '''
 
-    def __init__(self, c_dim=128, dim=3, hidden_dim=128, 
+    def __init__(self, c_dim=32, dim=3, hidden_dim=32, 
                  unet3d_kwargs=None, 
-                 grid_resolution=None, n_blocks=5,
+                 grid_resolution=32, n_blocks=5,
                  map2local=None):
         super().__init__()
-
         self.c_dim = c_dim
         self.fc_pos = nn.Linear(dim, 2*hidden_dim)
         self.blocks = nn.ModuleList([
@@ -137,7 +128,7 @@ class LocalPoolPointnet(nn.Module):
 
     def generate_grid_features(self, p, c):
         p_nor = normalize_3d_coordinate(p.clone())
-        index = coordinate2index(p_nor, self.reso_grid, coord_type='3d')
+        index = coordinate3d_index(p_nor, self.reso_grid)
         # scatter grid features from points
         fea_grid = c.new_zeros(p.size(0), self.c_dim, self.reso_grid**3)
         c = c.permute(0, 2, 1)
@@ -163,8 +154,9 @@ class LocalPoolPointnet(nn.Module):
 
         # acquire the index for each point
         coord = normalize_3d_coordinate(p.clone())
-        index = coordinate2index(coord, self.reso_grid, coord_type='3d')
-        
+        index = coordinate3d_index(coord, self.reso_grid)
+
+        # xxxx8888
         if self.map2local:
             pp = self.map2local(p)
             net = self.fc_pos(pp)
@@ -200,12 +192,10 @@ class LocalDecoder(nn.Module):
         self.c_dim = c_dim
         self.n_blocks = n_blocks
 
-        self.fc_c = nn.ModuleList([
-            nn.Linear(c_dim, hidden_size) for i in range(n_blocks)])
+        self.fc_c = nn.ModuleList([nn.Linear(c_dim, hidden_size) for i in range(n_blocks)])
 
         self.fc_p = nn.Linear(dim, hidden_size)
-        self.blocks = nn.ModuleList([
-            ResnetBlockFC(hidden_size) for i in range(n_blocks)])
+        self.blocks = nn.ModuleList([ResnetBlockFC(hidden_size) for i in range(n_blocks)])
 
         self.fc_out = nn.Linear(hidden_size, out_dim)
         self.actvn = F.relu
@@ -241,6 +231,7 @@ class LocalDecoder(nn.Module):
 
         out = self.fc_out(self.actvn(net))
     
+        # xxxx8888
         if self.out_dim > 3:
             out = out.reshape(batch_size, -1, 3)
             
@@ -379,7 +370,6 @@ class Encode2Points(nn.Module):
         #         )
         #       )
         #       (final_conv): Conv3d(32, 32, kernel_size=(1, 1, 1), stride=(1, 1, 1))
-        #       (final_activation): Sigmoid()
         #     )
         #   )
         #   (decoder_normal): LocalDecoder(
@@ -420,11 +410,8 @@ class Encode2Points(nn.Module):
         points = p.clone()
 
         # encode the input point cloud to a feature volume
-
-        # xxxx8888
         c = self.encoder(p) # c.size() -- [1, 32, 32, 32, 32]
         offset = self.decoder_offset(p, c) # offset.size() -- [1, 21000, 3]
-
         # points.size() -- [1, 3000, 3]
 
         # more than one offset is predicted per-point
@@ -432,7 +419,6 @@ class Encode2Points(nn.Module):
         points = points + self.s_off * offset # self.s_off -- 0.001
         points = torch.clamp(points, 0.0, 0.99)
 
-        # xxxx8888
         normals = self.decoder_normal(points, c)
 
         # (Pdb) pp points.size() -- [1, 21000, 3]
@@ -446,13 +432,16 @@ class MeshSDF(nn.Module):
         super(MeshSDF, self).__init__()
         self.enc = Encode2Points()
         self.dpsr = dpsr.DPSR(res, sigma=sigma)
+        self.load_weights()
+
+    def load_weights(self, model_path="models/points_mesh.pth"):
+        cdir = os.path.dirname(__file__)
+        checkpoint = model_path if cdir == "" else cdir + "/" + model_path
+        self.enc.load_state_dict(torch.load(checkpoint))
+
 
     def forward(self, points):
     	points, normals = self.enc(points)
     	chi = self.dpsr(points, normals)
+
     	return chi
-
-if __name__ == "__main__":
-	model = MeshSDF()
-
-	pdb.set_trace()

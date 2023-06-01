@@ -65,13 +65,15 @@ def mesh_predict(input_files, output_dir):
     for filename in pc_filenames:
         progress_bar.update(1)
 
-        points, normals = todos.data.load_3dply(filename)
+        points, normals = todos.data.load_3dply(filename, device=device)
         # ignore normals
+        with torch.no_grad():
+            chi, pred_points, pred_normals = model(points)
 
-        chi = todos.model.forward(model, device, points)
         output_file = f"{output_dir}/{os.path.basename(filename)}"
+        todos.data.save_3dply(pred_points, pred_normals, output_file)
+
         output_file = output_file.split('.')[0] + ".obj" # replace "*.ply to *.obj"
-        print(output_file)
         todos.data.export_3dmesh(chi, output_file)
 
     todos.model.reset_device()

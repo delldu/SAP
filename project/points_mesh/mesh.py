@@ -428,7 +428,7 @@ class Encode2Points(nn.Module):
     
 
 class MeshSDF(nn.Module):
-    def __init__(self, res=(128, 128, 128), sigma=2):
+    def __init__(self, res=(256, 256, 256), sigma=2):
         super(MeshSDF, self).__init__()
         self.enc = Encode2Points()
         self.dpsr = dpsr.DPSR(res, sigma=sigma)
@@ -444,4 +444,4 @@ class MeshSDF(nn.Module):
     	points, normals = self.enc(points)
     	chi = self.dpsr(points, normals)
 
-    	return chi
+    	return chi, points, normals

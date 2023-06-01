@@ -78,10 +78,7 @@ def main():
     collate_fn=collate_fn,
     worker_init_fn=worker_init_fn)
     
-    if torch.cuda.device_count() > 1:
-        model = torch.nn.DataParallel(Encode2Points(cfg)).to(device)
-    else:
-        model = Encode2Points(cfg).to(device)
+    model = Encode2Points(cfg).to(device)
 
     n_parameter = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info('Number of parameters: %d'% n_parameter)

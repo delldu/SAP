@@ -68,7 +68,6 @@ train:
   visualize_every: 1000
   save_every: 1000
   vis_vert_color: True
-  o3d_show: False
   o3d_vis_pcl: True
   o3d_window_size: 540
   vis_rendering: False

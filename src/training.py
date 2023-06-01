@@ -11,7 +11,7 @@ from src.utils import grid_interp, export_pointcloud, export_mesh, \
                       mc_from_psr, scale2onet, GaussianSmoothing
 from pytorch3d.ops.knn import knn_gather, knn_points
 from pytorch3d.loss import chamfer_distance
-from pdb import set_trace as st
+import pdb
 
 class Trainer(object):
     '''
@@ -35,12 +35,11 @@ class Trainer(object):
                             cfg['model']['grid_res'], 
                             cfg['model']['grid_res']), 
                         sig=cfg['model']['psr_sigma'])
-        if torch.cuda.device_count() > 1:    
-            self.dpsr = torch.nn.DataParallel(self.dpsr) # parallell DPSR
         self.dpsr = self.dpsr.to(device)
 
         if cfg['train']['gauss_weight']>0.:
             self.gauss_smooth = GaussianSmoothing(1, 7, 2).to(device)
+        pdb.set_trace()
         
     def train_step(self, inputs, data, model):
         ''' Performs a training step.

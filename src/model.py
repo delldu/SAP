@@ -173,9 +173,6 @@ class Encode2Points(nn.Module):
         time_dict['predict'] = t2 - t1
         
         points = torch.clamp(points, 0.0, 0.99)
-        if self.cfg['model']['normal_normalize']:
-            normals = normals / (normals.norm(dim=-1, keepdim=True)+1e-8)
-
         
         return points, normals
     

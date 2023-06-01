@@ -16,6 +16,7 @@ from pytorch3d.structures import Meshes
 from pytorch3d.renderer import PerspectiveCameras, rasterize_meshes
 from igl import adjacency_matrix, connected_components
 import open3d as o3d
+import pdb
 
 ##################################################
 # Below are functions for DPSR
@@ -38,7 +39,7 @@ def fftfreqs(res, dtype=torch.float32, exact=True):
         freqs.append(torch.tensor(np.fft.rfftfreq(r_, d=1/r_), dtype=dtype))
     else:
         freqs.append(torch.tensor(np.fft.rfftfreq(r_, d=1/r_)[:-1], dtype=dtype))
-    omega = torch.meshgrid(freqs)
+    omega = torch.meshgrid(freqs, indexing="ij")
     omega = list(omega)
     omega = torch.stack(omega, dim=-1)
 
@@ -87,7 +88,7 @@ def grid_interp(grid, pts, batched=True):
     ind1 = torch.fmod(torch.ceil(pts / cubesize), size).long() # periodic wrap-around
     ind01 = torch.stack((ind0, ind1), dim=0) # (2, batch, num_points, dim)
     tmp = torch.tensor([0,1],dtype=torch.long)
-    com_ = torch.stack(torch.meshgrid(tuple([tmp] * dim)), dim=-1).view(-1, dim)
+    com_ = torch.stack(torch.meshgrid(tuple([tmp] * dim), indexing="ij"), dim=-1).view(-1, dim)
     dim_ = torch.arange(dim).repeat(com_.shape[0], 1) # (2**dim, dim)
     ind_ = ind01[com_, ..., dim_]   # (2**dim, dim, batch, num_points)
     ind_n = ind_.permute(2, 3, 0, 1) # (batch, num_points, 2**dim, dim)
@@ -157,7 +158,7 @@ def point_rasterize(pts, vals, size):
     ind1 = torch.fmod(torch.ceil(pts / cubesize), size).long() # periodic wrap-around
     ind01 = torch.stack((ind0, ind1), dim=0) # (2, batch, num_points, dim)
     tmp = torch.tensor([0,1],dtype=torch.long)
-    com_ = torch.stack(torch.meshgrid(tuple([tmp] * dim)), dim=-1).view(-1, dim)
+    com_ = torch.stack(torch.meshgrid(tuple([tmp] * dim), indexing="ij"), dim=-1).view(-1, dim)
     dim_ = torch.arange(dim).repeat(com_.shape[0], 1) # (2**dim, dim)
     ind_ = ind01[com_, ..., dim_]   # (2**dim, dim, batch, num_points)
     ind_n = ind_.permute(2, 3, 0, 1) # (batch, num_points, 2**dim, dim)
@@ -429,8 +430,8 @@ def initialize_logger(cfg):
     if not out_dir:
         os.makedirs(out_dir)
     
-    cfg['train']['dir_model'] = os.path.join(out_dir, 'model')
-    os.makedirs(cfg['train']['dir_model'], exist_ok=True)
+    # cfg['train']['dir_model'] = os.path.join(out_dir, 'model')
+    # os.makedirs(cfg['train']['dir_model'], exist_ok=True)
 
     if cfg['train']['exp_mesh']:
         cfg['train']['dir_mesh'] = os.path.join(out_dir, 'vis/mesh')
@@ -438,12 +439,6 @@ def initialize_logger(cfg):
     if cfg['train']['exp_pcl']:
         cfg['train']['dir_pcl'] = os.path.join(out_dir, 'vis/pointcloud')
         os.makedirs(cfg['train']['dir_pcl'], exist_ok=True)
-    if cfg['train']['vis_rendering']:
-        cfg['train']['dir_rendering'] = os.path.join(out_dir, 'vis/rendering')
-        os.makedirs(cfg['train']['dir_rendering'], exist_ok=True)
-    if cfg['train']['o3d_show']:
-        cfg['train']['dir_o3d'] = os.path.join(out_dir, 'vis/o3d')
-        os.makedirs(cfg['train']['dir_o3d'], exist_ok=True)
 
 
     logger = logging.getLogger("train")
@@ -504,29 +499,14 @@ def scale2onet(p, scale=1.2):
     '''
     return (p - 0.5) * scale
     
-def update_optimizer(inputs, cfg, epoch, model=None, schedule=None):
-    if model is not None:
-        if schedule is not None:
-            optimizer = torch.optim.Adam([
-                {"params": model.parameters(),
-                "lr": schedule[0].get_learning_rate(epoch)},
-                {"params": inputs,
-                "lr": schedule[1].get_learning_rate(epoch)}])
-        elif 'lr' in cfg['train']:
-            optimizer = torch.optim.Adam([
-                {"params": model.parameters(),
-                    "lr": float(cfg['train']['lr'])},
-                {"params": inputs,
-                "lr": float(cfg['train']['lr_pcl'])}])
-        else:
-            raise Exception('no known learning rate')
-    else:
-        if schedule is not None:
-            optimizer = torch.optim.Adam([inputs], lr=schedule[0].get_learning_rate(epoch))
-        else:
-            optimizer = torch.optim.Adam([inputs], lr=float(cfg['train']['lr_pcl']))
+# def update_optimizer(inputs, cfg, epoch, schedule=None):
+#     # schedule -- src.utils.StepLearningRateSchedule
+#     if schedule is not None:
+#         optimizer = torch.optim.Adam([inputs], lr=schedule[0].get_learning_rate(epoch))
+#     else:
+#         optimizer = torch.optim.Adam([inputs], lr=float(cfg['train']['lr_pcl']))
 
-    return optimizer
+#     return optimizer
 
 
 def is_url(url):
@@ -572,7 +552,7 @@ class GaussianSmoothing(nn.Module):
             [
                 torch.arange(size, dtype=torch.float32)
                 for size in kernel_size
-            ]
+            ], indexing="ij"
         )
         for size, std, mgrid in zip(kernel_size, sigma, meshgrids):
             mean = (size - 1) / 2

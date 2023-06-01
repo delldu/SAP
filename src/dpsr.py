@@ -64,3 +64,6 @@ class DPSR(nn.Module):
             if self.scale:
                 phi = -phi / torch.abs(fv0.view(*tuple([-1]+[1] * self.dim))) *0.5
         return phi
+
+    def __repr__(self):
+        return f'DPSR: grid = {self.res}, sigma = {self.sig}'

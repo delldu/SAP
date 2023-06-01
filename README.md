@@ -56,7 +56,6 @@ python optim_hierarchy.py configs/optim_based/teaser.yaml
 ```
 This script should create a folder `out/demo_optim` where the output meshes and the optimized oriented point clouds under different grid resolution are stored.
 
-To visualize the optimization process on the fly, you can set `o3d_show: Frue` in [`configs/optim_based/teaser.yaml`](https://github.com/autonomousvision/shape_as_points/tree/main/configs/optim_based/teaser.yaml).
 
 ### Learning-based 3D Surface Reconstruction
 You can also test SAP on another application where we can reconstruct from unoriented point clouds with either **large noises** or **outliers** with a learned network.

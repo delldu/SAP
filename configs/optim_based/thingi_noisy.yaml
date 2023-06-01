@@ -31,7 +31,6 @@ train:
   save_every: 100
   exp_pcl: True
   exp_mesh: True
-  o3d_show: False
   o3d_vis_pcl: True
   o3d_window_size: 540
   vis_rendering: False

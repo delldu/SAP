@@ -13,3 +13,4 @@ python optim.py configs/optim_based/teaser.yaml \
 python optim.py configs/optim_based/teaser.yaml --model:grid_res 128 --model:psr_sigma 2 \
 	--train:input_mesh out/demo_optim/res_64/vis/mesh/1000.obj --train:out_dir out/demo_optim/res_128 \
 	--train:total_epochs ${TOTAL_ECHPOS} --train:lr_pcl 0.00098
+

@@ -3,7 +3,6 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 from collections import defaultdict
-import trimesh
 from tqdm import tqdm
 
 from src.dpsr import DPSR

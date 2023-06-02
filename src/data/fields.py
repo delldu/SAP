@@ -1,12 +1,6 @@
 import os
-import glob
-import time
-import random
-from PIL import Image
 import numpy as np
-import trimesh
 from src.data.core import Field
-from pdb import set_trace as st
 
 
 class IndexField(Field):
@@ -38,17 +32,13 @@ class FullPSRField(Field):
     def load(self, model_path, idx, category):
 
         # try:
-        # t0 = time.time()
         if self.multi_files is not None:
             psr_path = os.path.join(model_path, 'psr', 'psr_{:02d}.npz'.format(idx))
         else:
             psr_path = os.path.join(model_path, 'psr.npz')
         psr_dict = np.load(psr_path)
-        # t1 = time.time()
         psr = psr_dict['psr']
         psr = psr.astype(np.float32)
-        # t2 = time.time()
-        # print('load PSR: {:.4f}, change type: {:.4f}, total: {:.4f}'.format(t1 - t0, t2 - t1, t2-t0))
         data = {None: psr}
         
         if self.transform is not None:

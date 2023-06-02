@@ -7,7 +7,9 @@ from src.dpsr import DPSR
 from src.model import PSR2Mesh
 from src.utils import verts_on_largest_mesh, export_pointcloud, mc_from_psr
 from pytorch3d.loss import chamfer_distance
-import open3d as o3d
+# import open3d as o3d
+import todos
+
 import pdb
 
 class Trainer(object):
@@ -76,8 +78,7 @@ class Trainer(object):
 
         # compute loss
         # self.cfg['train']['w_chamfer'] -- 1
-        loss_ = self.cfg['train']['w_chamfer'] * \
-                self.compute_3d_loss(v, data)
+        loss_ = 1.0 * self.compute_3d_loss(v, data)
         loss_each['chamfer'] = loss_
         loss += loss_
     
@@ -112,6 +113,7 @@ class Trainer(object):
         return loss
     
     def point_resampling(self, inputs):
+        # xxxx8888
         '''  Resample points
         Args:
             inputs (torch.tensor): oriented point clouds
@@ -121,18 +123,20 @@ class Trainer(object):
         psr_grid, points, normals = self.pcl2psr(inputs)
         
         # shortcuts
-        n_grow = self.cfg['train']['n_grow_points'] # 2000
+        n_grow = 2000 # self.cfg['train']['n_grow_points']
 
         # [hack] for points resampled from the mesh from marching cubes, 
         # we need to divide by s instead of (s-1), and the scale is correct.
-        verts, faces, _ = mc_from_psr(psr_grid, real_scale=False, zero_level=0)
+        # verts, faces, _ = mc_from_psr(psr_grid, real_scale=False, zero_level=0)
+        verts, faces, _ = mc_from_psr(psr_grid, zero_level=0)
 
         # find the largest component
+        # xxxx8888 ?
         pts_mesh, faces_mesh = verts_on_largest_mesh(verts, faces)
-    
+
         # sample vertices only from the largest component, not from fragments
         mesh = trimesh.Trimesh(vertices=pts_mesh, faces=faces_mesh)
-        pi, face_idx = mesh.sample(n_grow+points.shape[1], return_index=True)
+        pi, face_idx = mesh.sample(n_grow + points.shape[1], return_index=True)
         normals_i = mesh.face_normals[face_idx].astype('float32')
         pts_mesh = torch.tensor(pi.astype('float32')).to(self.device)[None]
         n_mesh = torch.tensor(normals_i).to(self.device)[None]
@@ -148,42 +152,6 @@ class Trainer(object):
         # inputs.size() -- [1, 22000, 6]
 
         return inputs
-
-    # def visualize(self, data, inputs, renderer, epoch, o3d_vis=None):
-    #     '''  Visualization.
-    #     Args:
-    #         data (dict)                 : data dictionary
-    #         inputs (torch.tensor)       : source point clouds
-    #         renderer (nn.Module or None): a neural network or None
-    #         epoch (int)                 : the number of iterations
-    #         o3d_vis (o3d.Visualizer)    : open3d visualizer
-    #     '''
-        
-    #     data_type = self.cfg['data']['data_type']
-    #     it = '{:04d}'.format(int(epoch/self.cfg['train']['visualize_every']))
-
-        
-    #     if (self.cfg['train']['exp_mesh']) \
-    #      | (self.cfg['train']['exp_pcl']):
-    #         psr_grid, points, normals = self.pcl2psr(inputs)
-
-    #         with torch.no_grad():
-    #             v, f, n = mc_from_psr(psr_grid, pytorchify=True,
-    #             zero_level=self.cfg['data']['zero_level'], real_scale=True)
-    #             v, f, n = v[None], f[None], n[None]
-        
-    #             v = v * 2. - 1. # change to the range of [-1, 1]
-
-    #         color_v = None
-    #         vv = v.detach().squeeze().cpu().numpy()
-    #         ff = f.detach().squeeze().cpu().numpy()
-    #         points = points * 2 - 1
-    #         visualize_points_mesh(o3d_vis, points, normals, 
-    #                             vv, ff, self.cfg, it, epoch, color_v=color_v)
-
-    #     else:
-    #         v, f, n = inputs
-        
 
     def save_mesh_pointclouds(self, inputs, epoch, center=None, scale=None):
         '''  Save meshes and point clouds.
@@ -201,34 +169,39 @@ class Trainer(object):
         # scale = array([58.9441], dtype=float32)
 
 
-        exp_pcl = self.cfg['train']['exp_pcl'] # True
-        exp_mesh = self.cfg['train']['exp_mesh'] # True
-        
         psr_grid, points, normals = self.pcl2psr(inputs)
         
-        if exp_pcl: # True
-            dir_pcl = self.cfg['train']['dir_pcl']
-            p = points.squeeze(0).detach().cpu().numpy()
-            p = p * 2 - 1
-            n = normals.squeeze(0).detach().cpu().numpy()
-            if scale is not None:
-                p *= scale
-            if center is not None:
-                p += center
-            export_pointcloud(os.path.join(dir_pcl, '{:04d}.ply'.format(epoch)), p, n)
+        dir_pcl = self.cfg['train']['dir_pcl']
+        p = points.squeeze(0).detach().cpu().numpy()
+        p = p * 2 - 1
+        n = normals.squeeze(0).detach().cpu().numpy()
+        if scale is not None:
+            p *= scale
+        if center is not None:
+            p += center
+        filename = os.path.join(dir_pcl, '{:04d}.ply'.format(epoch))
+        todos.data.save_3dply(torch.from_numpy(p), torch.from_numpy(n), filename)
 
-        if exp_mesh: # True
-            dir_mesh = self.cfg['train']['dir_mesh']
-            with torch.no_grad():
-                v, f, _ = mc_from_psr(psr_grid,
-                        zero_level=self.cfg['data']['zero_level'], real_scale=True) # self.cfg['data']['zero_level'] -- 0
-                v = v * 2 - 1
-                if scale is not None:
-                    v *= scale
-                if center is not None:
-                    v += center
-            mesh = o3d.geometry.TriangleMesh()
-            mesh.vertices = o3d.utility.Vector3dVector(v)
-            mesh.triangles = o3d.utility.Vector3iVector(f)
-            outdir_mesh = os.path.join(dir_mesh, '{:04d}.ply'.format(epoch))
-            o3d.io.write_triangle_mesh(outdir_mesh, mesh)
+        # export_pointcloud(os.path.join(dir_pcl, 'o{:04d}.ply'.format(epoch)), p, n)
+
+        dir_mesh = self.cfg['train']['dir_mesh']
+        with torch.no_grad():
+            v, f, _ = mc_from_psr(psr_grid,
+                    zero_level=self.cfg['data']['zero_level'], real_scale=True) # self.cfg['data']['zero_level'] -- 0
+            v = v * 2 - 1
+
+            v = v.detach().cpu().numpy()
+            f = f.detach().cpu().numpy()
+            if scale is not None:
+                v *= scale
+            if center is not None:
+                v += center
+
+        filename = os.path.join(dir_mesh, '{:04d}.obj'.format(epoch))
+        todos.data.save_3dobj(torch.from_numpy(v), torch.from_numpy(f.astype(np.float32)).long(), filename)
+
+        # mesh = o3d.geometry.TriangleMesh()
+        # mesh.vertices = o3d.utility.Vector3dVector(v)
+        # mesh.triangles = o3d.utility.Vector3iVector(f)
+        # outdir_mesh = os.path.join(dir_mesh, 'o{:04d}.ply'.format(epoch))
+        # o3d.io.write_triangle_mesh(outdir_mesh, mesh)

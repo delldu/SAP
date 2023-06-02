@@ -395,7 +395,7 @@ def grid_interpolation(
 
 
 class DPSR(nn.Module):
-    def __init__(self, res=(256, 256, 256), sigma=2):
+    def __init__(self, res=(128, 128, 128), sigma=2):
         super(DPSR, self).__init__()
         self.grid = res
         self.dim = len(res) # 3

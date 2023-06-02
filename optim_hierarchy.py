@@ -37,7 +37,7 @@ def main():
         
         input_mesh='None' if idx==0 else os.path.join(cfg['train']['out_dir'],
                         'res_%d' % (resolutions[idx-1]), 
-                        'vis/mesh', '%04d.ply' % (iterations[idx-1]))
+                        'vis/mesh', '%04d.obj' % (iterations[idx-1]))
         
         # cmd = 'export MKL_SERVICE_FORCE_INTEL=1 && '
         cmd = ""

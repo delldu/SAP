@@ -6,7 +6,6 @@ os.chdir(dname)
 
 import torch
 import torch.optim as optim
-import open3d as o3d
 
 import numpy as np; np.set_printoptions(precision=4)
 import shutil, argparse, time

@@ -1,7 +1,5 @@
 import torch
 import time
-import trimesh
-import numpy as np
 from src.utils import mc_from_psr
 
 class Generator3D(object):
@@ -50,8 +48,7 @@ class Generator3D(object):
         t1 = time.time()
         psr_grid = self.dpsr(points, normals)
         t2 = time.time()
-        v, f, _ = mc_from_psr(psr_grid, 
-                    zero_level=self.threshold)
+        v, f, _ = mc_from_psr(psr_grid, zero_level=self.threshold)
         stats_dict['pcl'] = t1 - t0
         stats_dict['dpsr'] = t2 - t1
         stats_dict['mc'] = time.time() - t2

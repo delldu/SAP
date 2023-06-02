@@ -3,7 +3,8 @@ import trimesh
 import argparse, time, os
 
 import numpy as np; np.set_printoptions(precision=4)
-import open3d as o3d
+# import open3d as o3d
+import todos
 
 from src.optimization import Trainer
 from src.utils import load_config, update_config, initialize_logger, \
@@ -78,6 +79,8 @@ def main():
             mesh = Meshes(verts=verts, faces=faces)
             points, normals = sample_points_from_meshes(mesh, 
                         num_samples=cfg['data']['num_points'], return_normals=True)
+            # xxxx8888
+
             # mesh is saved in the original scale of the gt
             points -= center.float().to(device)
             points /= scale.float().to(device)
@@ -86,9 +89,12 @@ def main():
             points = points / 2. + 0.5
         else:
             # directly initialize from a point cloud
-            pcd = o3d.io.read_point_cloud(cfg['train']['input_mesh'])
-            points = torch.from_numpy(np.array(pcd.points)[None]).float().to(device)
-            normals = torch.from_numpy(np.array(pcd.normals)[None]).float().to(device)
+            # pcd = o3d.io.read_point_cloud(cfg['train']['input_mesh'])
+            # points = torch.from_numpy(np.array(pcd.points)[None]).float().to(device)
+            # normals = torch.from_numpy(np.array(pcd.normals)[None]).float().to(device)
+            points, normals = todos.data.load_3dply(cfg['train']['input_mesh'], device=device)
+
+            # xxxx8888
             points -= center.float().to(device)
             points /= scale.float().to(device)
             points *= 0.9
@@ -98,11 +104,11 @@ def main():
         sphere_mesh = trimesh.creation.uv_sphere(radius=sphere_radius, count=[256,256])
         # sphere_mesh -- <trimesh.Trimesh(vertices.shape=(130816, 3), faces.shape=(259588, 3))>
 
-        # cfg['data']['num_points'] -- 20000
-        points, idx = sphere_mesh.sample(cfg['data']['num_points'], return_index=True)
+        points, idx = sphere_mesh.sample(20000, return_index=True) # cfg['data']['num_points'] -- 20000
 
         points += 0.5 # make sure the points are within the range of [0, 1)
         normals = sphere_mesh.face_normals[idx]
+
         points = torch.from_numpy(points).unsqueeze(0).to(device) # [1, 20000, 3]
         normals = torch.from_numpy(normals).unsqueeze(0).to(device) # [1, 20000, 3]
 
@@ -115,12 +121,9 @@ def main():
     cfg['train']['schedule']['pcl']['initial'] = cfg['train']['lr_pcl']
     print('Initial learning rate:', cfg['train']['schedule']['pcl']['initial'])
 
-    if 'schedule' in cfg['train']:
-        # cfg['train']['schedule']
-        # {'pcl': {'initial': '0.002', 'interval': 700, 'factor': 0.5, 'final': '1e-3'}}
-        lr_schedules = get_learning_rate_schedules(cfg['train']['schedule'])
-    else:
-        lr_schedules = None
+    # cfg['train']['schedule']
+    # {'pcl': {'initial': '0.002', 'interval': 700, 'factor': 0.5, 'final': '1e-3'}}
+    lr_schedules = get_learning_rate_schedules(cfg['train']['schedule'])
 
     optimizer = torch.optim.Adam([inputs], lr=lr_schedules[0].get_learning_rate(0))
     try:
@@ -155,23 +158,23 @@ def main():
     #     weight_decay: 0
     # )
 
+    # optimizer.param_groups[0].keys()
+    # -- dict_keys(['params', 'lr', 'betas', 'eps', 'weight_decay', 'amsgrad', 
+    #    'maximize', 'foreach', 'capturable', 'differentiable', 'fused'])
+    # optimizer.param_groups[0]['params'][0].size() -- [1, 20000, 6]
+    # optimizer.param_groups[0]['lr'] -- 0.002
+    # 'lr': 0.002, 'betas': (0.9, 0.999), 'eps': 1e-08, 'weight_decay': 0, 'amsgrad': False, 'maximize': False, 
+    #     'foreach': None, 'capturable': False, 'differentiable': False, 'fused': None}
+
     trainer = Trainer(cfg, optimizer, device=device)
     runtime = AverageMeter()
     
     # training loop
     for epoch in range(start_epoch+1, cfg['train']['total_epochs']+1):
         # schedule the learning rate
-        if (epoch>0) & (lr_schedules is not None):
-            if (epoch % lr_schedules[0].interval == 0):
-                adjust_learning_rate(lr_schedules, optimizer, epoch)
-                # if len(lr_schedules) >1:
-                #     print('[epoch {}] net_lr: {}, pcl_lr: {}'.format(epoch, 
-                #                         lr_schedules[0].get_learning_rate(epoch), 
-                #                         lr_schedules[1].get_learning_rate(epoch)))
-                # else:
-                #     print('[epoch {}] adjust pcl_lr to: {}'.format(epoch, 
-                #                         lr_schedules[0].get_learning_rate(epoch)))
-                print('[epoch {}] adjust pcl_lr to: {}'.format(epoch, lr_schedules[0].get_learning_rate(epoch)))
+        if (epoch>0) & (epoch % lr_schedules[0].interval == 0):
+            adjust_learning_rate(lr_schedules, optimizer, epoch)
+            print('[epoch {}] adjust pcl_lr to: {}'.format(epoch, lr_schedules[0].get_learning_rate(epoch)))
 
 
         start = time.time()
@@ -207,8 +210,8 @@ def main():
            (epoch % cfg['train']['resample_every'] == 0) & \
            (epoch < cfg['train']['total_epochs']):
                 inputs = trainer.point_resampling(inputs)
-                optimizer = torch.optim.Adam([inputs], lr=lr_schedules[0].get_learning_rate(epoch))
 
+                optimizer = torch.optim.Adam([inputs], lr=lr_schedules[0].get_learning_rate(epoch))
                 trainer = Trainer(cfg, optimizer, device=device)
     
 

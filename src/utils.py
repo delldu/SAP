@@ -2,7 +2,6 @@ import torch
 import io, os, logging, urllib
 import yaml
 import trimesh
-import imageio
 import numbers
 import math
 import numpy as np
@@ -11,9 +10,7 @@ from plyfile import PlyData
 from torch import nn
 from torch.nn import functional as F
 from torch.utils import model_zoo
-from skimage import measure, img_as_float32
-from pytorch3d.structures import Meshes
-from pytorch3d.renderer import PerspectiveCameras, rasterize_meshes
+from skimage import measure
 from igl import adjacency_matrix, connected_components
 import open3d as o3d
 import pdb
@@ -243,7 +240,7 @@ def load_model_manual(state_dict, model):
 
     model.load_state_dict(new_state_dict)
 
-def mc_from_psr(psr_grid, pytorchify=False, real_scale=False, zero_level=0):
+def mc_from_psr(psr_grid, real_scale=False, zero_level=0):
     '''
     Run marching cubes from PSR grid
     '''
@@ -271,76 +268,13 @@ def mc_from_psr(psr_grid, pytorchify=False, real_scale=False, zero_level=0):
     else:
         verts = verts / s # scale to range [0, 1)
 
-    if pytorchify:
-        device = psr_grid.device
-        verts = torch.Tensor(np.ascontiguousarray(verts)).to(device)
-        faces = torch.Tensor(np.ascontiguousarray(faces)).to(device)
-        normals = torch.Tensor(np.ascontiguousarray(-normals)).to(device)
+    device = psr_grid.device
+    verts = torch.Tensor(np.ascontiguousarray(verts)).to(device)
+    faces = torch.Tensor(np.ascontiguousarray(faces)).to(device)
+    normals = torch.Tensor(np.ascontiguousarray(-normals)).to(device)
 
     return verts, faces, normals
         
-def calc_inters_points(verts, faces, pose, img_size, mask_gt=None):
-    verts = verts.squeeze()
-    faces = faces.squeeze()
-    pix_to_face, w, mask = mesh_rasterization(verts, faces, pose, img_size)
-    if mask_gt is not None:
-        #! only evaluate within the intersection
-        mask = mask & mask_gt
-    # find 3D points intesected on the mesh
-    if True:
-        w_masked = w[mask]
-        f_p = faces[pix_to_face[mask]].long() # cooresponding faces for each pixel
-        # corresponding vertices for p_closest
-        v_a, v_b, v_c = verts[f_p[..., 0]], verts[f_p[..., 1]], verts[f_p[..., 2]]
-        
-        # calculate the intersection point of each pixel and the mesh
-        p_inters = w_masked[..., 0, None] * v_a + \
-                w_masked[..., 1, None] * v_b + \
-                w_masked[..., 2, None] * v_c
-    else:
-        # backproject ndc to world coordinates using z-buffer
-        W, H = img_size[1], img_size[0]
-        xy = uv.to(mask.device)[mask]
-        x_ndc = 1 - (2*xy[:, 0]) / (W - 1)
-        y_ndc = 1 - (2*xy[:, 1]) / (H - 1)
-        z = zbuf.squeeze().reshape(H * W)[mask]
-        xy_depth = torch.stack((x_ndc, y_ndc, z), dim=1)
-        
-        p_inters = pose.unproject_points(xy_depth, world_coordinates=True)
-    
-        # if there are outlier points, we should remove it
-        if (p_inters.max()>1) | (p_inters.min()<-1):
-            mask_bound = (p_inters>=-1) & (p_inters<=1)
-            mask_bound = (mask_bound.sum(dim=-1)==3)
-            mask[mask==True] = mask_bound
-            p_inters = p_inters[mask_bound]
-            print('!!!!!find outlier!')
-
-    return p_inters, mask, f_p, w_masked
-
-def mesh_rasterization(verts, faces, pose, img_size):
-    '''
-    Use PyTorch3D to rasterize the mesh given a camera 
-    '''
-    transformed_v = pose.transform_points(verts.detach()) # world -> ndc coordinate system
-    if isinstance(pose, PerspectiveCameras):
-        transformed_v[..., 2] = 1/transformed_v[..., 2]
-    # find p_closest on mesh of each pixel via rasterization
-    transformed_mesh = Meshes(verts=[transformed_v], faces=[faces])
-    pix_to_face, zbuf, bary_coords, dists = rasterize_meshes(
-        transformed_mesh,
-        image_size=img_size,
-        blur_radius=0,
-        faces_per_pixel=1,
-        perspective_correct=False
-    )
-    pix_to_face = pix_to_face.reshape(1, -1) # B x reso x reso -> B x (reso x reso)
-    mask = pix_to_face.clone() != -1
-    mask = mask.squeeze()
-    pix_to_face = pix_to_face.squeeze()
-    w = bary_coords.reshape(-1, 3)
-
-    return pix_to_face, w, mask
 
 def verts_on_largest_mesh(verts, faces):
     '''
@@ -351,20 +285,30 @@ def verts_on_largest_mesh(verts, faces):
         verts = verts.squeeze().detach().cpu().numpy()
         faces = faces.squeeze().int().detach().cpu().numpy()
 
+    # faces.shape -- (2288, 3)
     A = adjacency_matrix(faces)
+    # ==> A <1146x1146 sparse matrix of type '<class 'numpy.int32'>'
+    #     with 6864 stored elements in Compressed Sparse Column format>
+
     num, conn_idx, conn_size = connected_components(A)
+    # (Pdb) num, conn_idx, conn_size
+    # (1, array([0, 0, 0, ..., 0, 0, 0], dtype=int32), array(1146, dtype=int32))
+    # conn_idx.shape, conn_idx.min(), conn_idx.max() -- ((1146,), 0, 0)
+
     if num == 0:
         v_large, f_large = verts, faces
     else:
         max_idx = conn_size.argmax() # find the index of the largest component
+        # ==> max_idx == 0
         v_large = verts[conn_idx==max_idx] # keep points on the largest component
+        # (verts != v_large).sum() -- 0 !!!!!!!!!!!!
 
-        if True:
-            mesh_largest = trimesh.Trimesh(verts, faces)
-            connected_comp = mesh_largest.split(only_watertight=False)
-            mesh_largest = connected_comp[max_idx]
-            v_large, f_large = mesh_largest.vertices, mesh_largest.faces
-            v_large = v_large.astype(np.float32)
+        mesh_largest = trimesh.Trimesh(verts, faces)
+        connected_comp = mesh_largest.split(only_watertight=False)
+        mesh_largest = connected_comp[max_idx]
+        v_large, f_large = mesh_largest.vertices, mesh_largest.faces
+        v_large = v_large.astype(np.float32)
+
     return v_large, f_large
 
 def load_pointcloud(in_file):
